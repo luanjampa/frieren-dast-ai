@@ -1378,7 +1378,8 @@ class Coordinator:
             if signature is None or not signature.has_signal:
                 continue
 
-            verdict = classify(signature, model_id=model_id)
+            # classify() makes a blocking LLM call — keep it off the event loop.
+            verdict = await asyncio.to_thread(classify, signature, model_id=model_id)
             pname = param.get("name", "")
             if verdict.has_hypothesis:
                 summary_lines.append(

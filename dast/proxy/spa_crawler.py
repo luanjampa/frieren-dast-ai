@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 
 from dast.proxy.session_store import SessionStore
 from dast.utils.logger import get_logger
+from dast.utils.tasks import spawn_tracked
 
 logger = get_logger(__name__)
 
@@ -75,7 +76,7 @@ class SpaCrawler:
         import inspect
         logger.debug(msg, session_id=self.session_id)
         if inspect.iscoroutinefunction(self._log_cb):
-            asyncio.ensure_future(self._log_cb(msg))
+            spawn_tracked(self._log_cb(msg), name="crawl-log")
         else:
             self._log_cb(msg)
 

@@ -6,7 +6,6 @@ the variable-fuzzing job (run/poll/stop), backing the dashboard's GraphQL tab
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 from typing import TYPE_CHECKING
 
@@ -15,6 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from dast.utils.logger import get_logger
+from dast.utils.tasks import spawn_tracked
 
 if TYPE_CHECKING:
     from dast.proxy.api.context import DashboardContext
@@ -329,10 +329,10 @@ def make_router(ctx: "DashboardContext") -> APIRouter:
         }
 
         from dast.graphql.variable_fuzzer import run_fuzz_job
-        asyncio.ensure_future(run_fuzz_job(
+        spawn_tracked(run_fuzz_job(
             fuzz_jobs[job_id], method, url, headers, request_body,
             attempts, baseline_length, baseline_had_errors,
-        ))
+        ), name=f"graphql-fuzz-{job_id}")
 
         return {"job_id": job_id, "total": len(attempts)}
 

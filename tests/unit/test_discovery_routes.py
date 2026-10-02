@@ -39,7 +39,7 @@ def client_and_queue(monkeypatch):
         intercept_store=InterceptStore(),
         discovery_queue=discovery_queue,
     )
-    return TestClient(app), discovery_queue
+    return TestClient(app, base_url="http://127.0.0.1"), discovery_queue
 
 
 def test_out_of_scope_url_rejected_and_not_enqueued(client_and_queue):

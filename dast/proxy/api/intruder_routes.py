@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from dast.proxy.api.context import DashboardContext
 from dast.utils.logger import get_logger
+from dast.utils.tasks import spawn_tracked
 
 logger = get_logger(__name__)
 
@@ -237,7 +238,7 @@ def make_router(ctx: DashboardContext) -> APIRouter:
 
             job["status"] = "done"
 
-        asyncio.ensure_future(_run_job())
+        spawn_tracked(_run_job(), name=f"intruder-{job_id}")
         return {"job_id": job_id, "total": len(payloads)}
 
     @router.get("/api/intruder/results/{job_id}")

@@ -26,6 +26,7 @@ from dast.proxy.dashboard_server import build_app
 from dast.proxy.proxy_server import ProxyServer
 from dast.proxy.session_store import ProxyEntry, SessionStore
 from dast.utils.logger import get_logger
+from dast.utils.tasks import spawn_tracked
 
 if TYPE_CHECKING:
     from dast.ai.agent_base import AgentFinding
@@ -816,9 +817,15 @@ class ProxyRunner:
                 continue
 
             recorded = 0
+            classify_with_llm = self._discovery_llm_classify_enabled()
             for hit in hits:
                 try:
-                    self._record_discovery_hit(hit, headers)
+                    # The LLM call is blocking — run it off the event loop so the
+                    # proxy and dashboard stay responsive while hits are classified.
+                    llm_attack_type = None
+                    if classify_with_llm and hit.get("kind", "file") != "graphql":
+                        llm_attack_type = await asyncio.to_thread(self._llm_classify_discovery_hit, hit)
+                    self._record_discovery_hit(hit, headers, llm_attack_type=llm_attack_type)
                     recorded += 1
                 except Exception as e:
                     logger.warning("Failed to record discovery hit",
@@ -828,7 +835,7 @@ class ProxyRunner:
                       f"Content discovery finished: {len(hits)} hit(s), {recorded} recorded",
                       url=base_url, source="crawler")
 
-    def _record_discovery_hit(self, hit: dict, headers: dict) -> None:
+    def _record_discovery_hit(self, hit: dict, headers: dict, llm_attack_type: Optional[str] = None) -> None:
         """
         Turn a single content-discovery hit into a synthetic sitemap entry and
         an AI scan suggestion. Reuses the synthetic-entry pattern from
@@ -836,8 +843,8 @@ class ProxyRunner:
 
         Classification (per plan): dir/file hits are neutral "recon" suggestions
         (no vulnerability inferred from a path); GraphQL hits get
-        "graphql_injection". Optional LLM refinement is applied when the
-        discovery_llm_classify scan-config flag is on AND AI is available.
+        "graphql_injection". ``llm_attack_type`` is the optional LLM refinement,
+        computed by the caller off the event loop (discovery_llm_classify flag).
         """
         import time
         import uuid
@@ -889,11 +896,9 @@ class ProxyRunner:
             )
 
         # Optional LLM refinement of the attack_type (opt-in, degrades to recon).
-        if attack_type == "recon" and self._discovery_llm_classify_enabled():
-            refined = self._llm_classify_discovery_hit(hit)
-            if refined:
-                attack_type = refined
-                rationale = f"{rationale} | LLM-inferred candidate: {refined}"
+        if attack_type == "recon" and llm_attack_type:
+            attack_type = llm_attack_type
+            rationale = f"{rationale} | LLM-inferred candidate: {llm_attack_type}"
 
         # ── AI scan suggestion (dedup on host/endpoint/attack_type) ────────
         suggestions = getattr(store, "active_suggestions", None)
@@ -1444,10 +1449,18 @@ class ProxyRunner:
 
         self._store.add_listener(_ai_mode_listener)
 
+        # Bounded dispatch: at most a few waiting tasks per worker leave the queue at a
+        # time. Pulling everything into tasks immediately made the queue's maxsize
+        # meaningless and let in-flight task count grow without bound; tasks are also
+        # strongly referenced here so none is garbage-collected mid-scan.
+        in_flight: set = set()
         while True:
+            max_in_flight = max(1, self._workers) * 4
+            while len(in_flight) >= max_in_flight:
+                await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
             entry_id = await self._scan_queue.get()
             qs.dequeue(entry_id)
-            asyncio.create_task(_attack_one(entry_id))
+            spawn_tracked(_attack_one(entry_id), name=f"scan-{entry_id}", registry=in_flight)
 
 
 _ID_RE = re.compile(

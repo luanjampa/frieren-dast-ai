@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 from dast.utils.logger import get_logger
+from dast.utils.tasks import spawn_tracked
 
 if TYPE_CHECKING:
     from dast.proxy.session_store import ProxyEntry, SessionStore
@@ -423,7 +424,7 @@ class AppContextWorker:
                 logger.warning("AppContextWorker: session intelligence write-back failed", host=host, error=str(exc))
 
         # Act on new high/medium priority hypotheses immediately
-        asyncio.ensure_future(self._act_on_hypotheses(host, existing))
+        spawn_tracked(self._act_on_hypotheses(host, existing), name=f"app-context-hypotheses-{host}")
 
 
     async def _act_on_hypotheses(self, host: str, profile: AppProfile) -> None:
