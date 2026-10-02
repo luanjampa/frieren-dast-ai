@@ -862,7 +862,7 @@ class ProxyRunner:
         # ── synthetic sitemap entry (only if not already present) ──────────
         already = any(
             e.host == host and e.path == path and e.method == method
-            for e in list(store._entries.values())
+            for e in store.all_entries()
         )
         if not already:
             synthetic_id = f"disc-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
@@ -878,10 +878,7 @@ class ProxyRunner:
                 content_type=hit.get("content_type", ""),
                 source="discovery",
             )
-            with store._lock:
-                store._entries[synthetic_id] = entry
-                store._order.append(synthetic_id)
-            store._notify(entry)
+            store.add_synthetic_entry(entry)
 
         # ── classification ────────────────────────────────────────────────
         kind = hit.get("kind", "file")

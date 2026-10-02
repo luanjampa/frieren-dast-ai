@@ -114,18 +114,16 @@ def make_router(ctx: DashboardContext) -> APIRouter:
 
         def _best_auth_headers_for_host(host: str) -> dict:
             best: dict = {}
-            with store._lock:
-                for eid in reversed(store._order):
-                    e = store._entries.get(eid)
-                    if not e or e.host != host:
-                        continue
-                    if e.source in ("imported", "agent"):
-                        continue
-                    for k, v in e.request_headers.items():
-                        if k.lower() in _AUTH_HEADERS:
-                            best[k.lower()] = v
-                    if best:
-                        return best
+            for e in store.entries_newest_first():
+                if e.host != host:
+                    continue
+                if e.source in ("imported", "agent"):
+                    continue
+                for k, v in e.request_headers.items():
+                    if k.lower() in _AUTH_HEADERS:
+                        best[k.lower()] = v
+                if best:
+                    return best
 
             session_cookies = store.get_cookies_for_host(host)
             if session_cookies:
@@ -178,9 +176,7 @@ def make_router(ctx: DashboardContext) -> APIRouter:
                 # updated to confirmed/unconfirmed once the active scan completes.
                 entry.findings.append(stub_finding)
 
-            with store._lock:
-                store._entries[entry_id] = entry
-                store._order.append(entry_id)
+            store.add_synthetic_entry(entry, notify=False)
 
             await ctx.broadcast(entry)
 

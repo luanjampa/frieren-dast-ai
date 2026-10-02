@@ -262,3 +262,18 @@ def test_prune_jobs_keeps_newest():
     jobs = {f"job{index}": {} for index in range(5)}
     prune_jobs(jobs, max_jobs=3)
     assert list(jobs) == ["job2", "job3", "job4"]
+
+
+def test_add_synthetic_entry_and_newest_first():
+    from dast.proxy.session_store import ProxyEntry, SessionStore
+    store = SessionStore()
+    seen = []
+    store.add_listener(lambda entry: seen.append(entry.id))
+    for index in range(3):
+        store.add_synthetic_entry(ProxyEntry(
+            id=f"syn-{index}", method="GET", url=f"https://a.test/{index}",
+            host="a.test", path=f"/{index}", request_headers={}, request_body=None,
+        ), notify=False)
+    assert [e.id for e in store.entries_newest_first()] == ["syn-2", "syn-1", "syn-0"]
+    assert [e.id for e in store.all_entries()] == ["syn-0", "syn-1", "syn-2"]
+    assert seen == []

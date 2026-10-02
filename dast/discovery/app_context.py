@@ -599,18 +599,16 @@ class AppContextWorker:
 
         best = None
         best_ts = 0.0
-        with self._store._lock:
-            for eid in reversed(self._store._order):
-                e = self._store._entries.get(eid)
-                if not e or e.host != host or e.method != method:
-                    continue
-                if e.source in ("agent", "imported"):
-                    continue
-                ep = e.path.split("?")[0]
-                if ep == path or (path_prefix and ep.startswith(path_prefix + "/")):
-                    if e.ts > best_ts:
-                        best = e
-                        best_ts = e.ts
+        for e in self._store.entries_newest_first():
+            if e.host != host or e.method != method:
+                continue
+            if e.source in ("agent", "imported"):
+                continue
+            ep = e.path.split("?")[0]
+            if ep == path or (path_prefix and ep.startswith(path_prefix + "/")):
+                if e.ts > best_ts:
+                    best = e
+                    best_ts = e.ts
         return best
 
 

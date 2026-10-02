@@ -791,6 +791,21 @@ class SessionStore:
         with self._lock:
             return [self._entries[eid] for eid in self._order if eid in self._entries]
 
+    def entries_newest_first(self) -> List[ProxyEntry]:
+        """Snapshot of all entries, most recent first."""
+        with self._lock:
+            return [self._entries[eid] for eid in reversed(self._order) if eid in self._entries]
+
+    def add_synthetic_entry(self, entry: ProxyEntry, notify: bool = True) -> None:
+        """Insert an entry that did not come through the proxy (import, discovery,
+        code-analysis hypothesis). Bypasses passive analysis; listeners are
+        notified unless ``notify`` is False (the caller broadcasts itself)."""
+        with self._lock:
+            self._entries[entry.id] = entry
+            self._order.append(entry.id)
+        if notify:
+            self._notify(entry)
+
     def in_scope_entries(self) -> List[ProxyEntry]:
         """All entries except out-of-scope — use for findings, overview, scan targeting."""
         with self._lock:

@@ -493,10 +493,7 @@ def make_router(ctx: DashboardContext) -> APIRouter:
                 request_body=synthetic_body,
                 source="imported",
             )
-            with ctx.store._lock:
-                ctx.store._entries[synthetic_id] = target_entry
-                ctx.store._order.append(synthetic_id)
-            ctx.store._notify(target_entry)
+            ctx.store.add_synthetic_entry(target_entry)
 
         # ── Inject hypothesis context as scan hint ───────────────────────
         attack_type = _vuln_type_to_attack(vuln_type)
@@ -560,10 +557,7 @@ def make_router(ctx: DashboardContext) -> APIRouter:
                     extra_entry.queued_for_scan = True
                     extra_entry.scan_result = None
                     extra_entry.skip_dedup = True  # explicit user action — bypass dedup
-                    with ctx.store._lock:
-                        ctx.store._entries[extra_id] = extra_entry
-                        ctx.store._order.append(extra_id)
-                    ctx.store._notify(extra_entry)
+                    ctx.store.add_synthetic_entry(extra_entry)
                     if ctx.scan_queue_state:
                         ctx.scan_queue_state.enqueue(
                             extra_entry.id, extra_entry.method, extra_entry.url, extra_entry.host

@@ -113,16 +113,14 @@ def make_router(ctx: "DashboardContext") -> APIRouter:
 
         host = urlparse(endpoint).netloc
         best: dict = {}
-        with store._lock:
-            for eid in reversed(store._order):
-                e = store._entries.get(eid)
-                if not e or e.host != host or e.source in ("imported", "agent"):
-                    continue
-                for k, v in e.request_headers.items():
-                    if k.lower() in _AUTH_HEADERS:
-                        best[k.lower()] = v
-                if best:
-                    return best
+        for e in store.entries_newest_first():
+            if e.host != host or e.source in ("imported", "agent"):
+                continue
+            for k, v in e.request_headers.items():
+                if k.lower() in _AUTH_HEADERS:
+                    best[k.lower()] = v
+            if best:
+                return best
 
         session_cookies = store.get_cookies_for_host(host)
         if session_cookies:
@@ -140,17 +138,15 @@ def make_router(ctx: "DashboardContext") -> APIRouter:
         everything and can hand-edit it (e.g. swap in a different session)."""
         from dast.plugins.graphql_introspection import _endpoint_url as _ep_url
 
-        with store._lock:
-            for eid in reversed(store._order):
-                e = store._entries.get(eid)
-                if not e or e.source in ("imported", "agent"):
-                    continue
-                if _ep_url(e) != endpoint:
-                    continue
-                return {
-                    k: v for k, v in e.request_headers.items()
-                    if k.lower() not in ("host", "content-length", "transfer-encoding", "connection")
-                }
+        for e in store.entries_newest_first():
+            if e.source in ("imported", "agent"):
+                continue
+            if _ep_url(e) != endpoint:
+                continue
+            return {
+                k: v for k, v in e.request_headers.items()
+                if k.lower() not in ("host", "content-length", "transfer-encoding", "connection")
+            }
         return _best_auth_headers_for_endpoint(endpoint)
 
     def _headers_from_named_session(name: str, endpoint: str) -> dict:
