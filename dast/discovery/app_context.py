@@ -27,6 +27,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional
 
+from dast.ai.prompt_safety import describe_auth_header
 from dast.utils.logger import get_logger
 from dast.utils.tasks import spawn_tracked
 
@@ -308,7 +309,7 @@ class AppContextWorker:
                 f"{e.method} {_sanitize(e.path, 100)} → {e.response_status}"
                 + (f" | body={req_preview}" if req_preview else "")
                 + (f" | resp={resp_preview}" if resp_preview else "")
-                + (f" | auth={_sanitize(auth_hdr[:60])}" if auth_hdr else "")
+                + (f" | auth={describe_auth_header(auth_hdr)}" if auth_hdr else "")
                 + (f" | cookie_names={_cookie_names(cookie_hdr)}" if cookie_hdr else "")
             )
 

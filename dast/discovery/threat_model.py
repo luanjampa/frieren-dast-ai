@@ -26,6 +26,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional
 
+from dast.ai.prompt_safety import describe_auth_header
 from dast.utils.logger import get_logger
 
 if TYPE_CHECKING:
@@ -179,7 +180,9 @@ class ThreatModelWorker:
         for entry in all_entries:
             if not entry.host or entry.method == "CONNECT":
                 continue
-            if entry.source == "out-of-scope":
+            # Only real observed traffic: the scanner's own probes (and the WAF
+            # blocks they trigger) must not become "invariants" of the app.
+            if entry.source in ("out-of-scope", "imported", "agent", "scan"):
                 continue
             if settings and not settings.is_in_scope(entry.url):
                 continue
@@ -210,7 +213,7 @@ class ThreatModelWorker:
 
             line = f"{e.method} {_sanitize(e.path, 80)} → {e.response_status}"
             if auth_hdr:
-                line += f" | auth={_sanitize(auth_hdr[:30])}"
+                line += f" | auth={describe_auth_header(auth_hdr)}"
             if cookie_hdr:
                 names = [p.split("=")[0].strip() for p in cookie_hdr.split(";") if "=" in p]
                 line += f" | cookies=[{','.join(names[:4])}]"
