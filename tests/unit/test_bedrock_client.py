@@ -222,3 +222,10 @@ def test_legacy_system_stays_plain_string(install_fake_client):
 
     assert isinstance(fake.bodies[0]["system"], str)
     assert "tools" not in fake.bodies[0]
+
+
+def test_structured_output_missing_required_field_raises(install_fake_client):
+    install_fake_client([_tool_response({"agents": []})])
+    schema = {"type": "object", "properties": {"agents": {}, "reason": {}}, "required": ["agents", "reason"]}
+    with pytest.raises(ValueError, match="reason"):
+        bedrock_client.invoke_json(system="s", user="u", schema=schema)

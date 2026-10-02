@@ -792,7 +792,7 @@ def _invoke_json_uncached(
     the legacy text path). Wrapped by invoke_json, which layers optional
     deterministic-response caching on top."""
     # Structured path: the model is forced to call the tool, so we read the
-    # validated object straight from the tool_use block.
+    # structured object straight from the tool_use block (required keys checked below).
     if schema is not None:
         from dast.ai import providers  # local import: avoids a module-level cycle
         try:
@@ -817,6 +817,11 @@ def _invoke_json_uncached(
             raise
         tool_input = _extract_tool_input(result)
         if tool_input is not None:
+            # Providers do not strictly validate tool input against the schema;
+            # a missing required field must fail here, not be read as a default.
+            missing = [key for key in schema.get("required", []) if key not in tool_input]
+            if missing:
+                raise ValueError(f"Structured output missing required field(s): {', '.join(missing)}")
             return tool_input
         # Model returned text despite tool_choice. This is common with local
         # OpenAI-compatible servers (Ollama, LM Studio, llama.cpp, vLLM) that

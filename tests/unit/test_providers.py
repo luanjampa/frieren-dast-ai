@@ -391,3 +391,9 @@ def test_invoke_external_does_not_retry_on_4xx(monkeypatch):
         bedrock_client.set_provider(provider="bedrock")
 
     assert calls["n"] == 1  # permanent error surfaced immediately, no retry
+def test_openai_malformed_tool_arguments_are_not_turned_into_empty_object():
+    from dast.ai.providers import _from_openai_response
+    envelope = _from_openai_response({"choices": [{"message": {
+        "tool_calls": [{"function": {"name": "emit_result", "arguments": "{not json"}}],
+    }}]})
+    assert not [b for b in envelope["content"] if b["type"] == "tool_use"]

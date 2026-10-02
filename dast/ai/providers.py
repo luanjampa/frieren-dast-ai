@@ -317,8 +317,11 @@ def _from_openai_response(data: Dict[str, Any]) -> Dict[str, Any]:
         try:
             parsed = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
         except json.JSONDecodeError:
+            # Do not fabricate an empty object: callers would read it as a valid
+            # "nothing to do" answer (e.g. a planner selecting no agents). Leaving
+            # the block out makes invoke_json fail loudly so the caller degrades.
             logger.warning("OpenAI tool_call arguments were not valid JSON", raw=raw_arguments[:200])
-            parsed = {}
+            continue
         content_blocks.append({
             "type": "tool_use",
             # Report the gateway's synthetic tool name so _extract_tool_input matches,
