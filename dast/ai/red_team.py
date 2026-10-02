@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Optional, Tuple
 
+from dast.ai.canaries import OPEN_REDIRECT_CANARY_HOST, SSTI_ARITHMETIC_PRODUCT
 from dast.ai.prompt_safety import UNTRUSTED_CONTENT_DIRECTIVE, wrap_untrusted
 from dast.ai.schemas import RED_TEAM_SCHEMA
 from dast.utils.logger import get_logger
@@ -97,16 +98,16 @@ def _pattern_confidence(finding: "AgentFinding") -> float:
     # LFI with actual file content
     import re as _re
     if attack in ("lfi", "path_traversal") and snippet and _re.search(
-        r"root:.*:0:0:|\\[fonts\\]|\[boot loader\]", snippet
+        r"root:.*:0:0:|\[fonts\]|\[boot loader\]", snippet
     ):
         return 0.90
 
     # SSTI math expression evaluated
-    if attack == "ssti" and ("49" in snippet or "evaluated" in evidence):
+    if attack == "ssti" and (SSTI_ARITHMETIC_PRODUCT in snippet or "evaluated" in evidence):
         return 0.85
 
     # Open redirect with confirmed redirect to our probe domain
-    if attack == "open_redirect" and "evil.example.com" in evidence:
+    if attack == "open_redirect" and OPEN_REDIRECT_CANARY_HOST in evidence:
         return 0.80
 
     # CRLF with injected header confirmed

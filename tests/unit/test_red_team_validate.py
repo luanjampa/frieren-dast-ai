@@ -65,11 +65,16 @@ class TestPatternConfidence:
         assert red_team._pattern_confidence(f) >= 0.75
 
     def test_ssti_evaluated_high(self):
-        f = _FakeFinding(attack_type="ssti", raw_response_snippet="Result: 49")
+        f = _FakeFinding(attack_type="ssti", raw_response_snippet="Result: 79032091")
         assert red_team._pattern_confidence(f) >= 0.80
 
+    def test_ssti_bare_49_not_high(self):
+        # "49" appears on almost any page — it is not evidence of evaluation.
+        f = _FakeFinding(attack_type="ssti", raw_response_snippet="Showing 49 results")
+        assert red_team._pattern_confidence(f) < 0.80
+
     def test_open_redirect_high(self):
-        f = _FakeFinding(attack_type="open_redirect", evidence="Redirected to evil.example.com")
+        f = _FakeFinding(attack_type="open_redirect", evidence="Redirected to dast-redirect-canary.invalid")
         assert red_team._pattern_confidence(f) >= 0.75
 
     def test_crlf_injected_high(self):

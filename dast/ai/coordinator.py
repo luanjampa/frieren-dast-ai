@@ -363,7 +363,7 @@ _CANARY_PAYLOADS: Dict[str, str] = {
 # Patterns that indicate signal for each attack type in the canary response
 _SIGNAL_PATTERNS: Dict[str, _re.Pattern] = {
     "sqli": _re.compile(
-        r"sql|syntax error|mysql|ora-|sqlite|pg::|unclosed quotation|"
+        r"sql syntax|syntax error|mysql|ora-\d{5}|sqlite|pg::|unclosed quotation|"
         r"you have an error in your sql|warning: mysql|"
         r"microsoft ole db provider for sql|odbc sql",
         _re.I,
@@ -374,8 +374,44 @@ _SIGNAL_PATTERNS: Dict[str, _re.Pattern] = {
     "cmdi": _re.compile(r"uid=\d+|gid=\d+|root:|command not found", _re.I),
     "xxe":  _re.compile(r"xml.*parsing|entity.*not.*allowed|dtd.*not.*allowed|unexpected.*<!DOCTYPE", _re.I),
     "nosql":_re.compile(r"\$where|operator.*not.*allowed|cast.*failed|bson.*error", _re.I),
-    "ssti": _re.compile(r"\b79014691\b|\b84232313\b", _re.I),
+    "ssti": _re.compile(r"\b79032091\b", _re.I),
 }
+
+
+def _strip_payload_echo(response_text: str, payload: str) -> str:
+    """Remove verbatim / URL-encoded / HTML-escaped echoes of the canary payload.
+
+    Several canaries contain their own signal string (``../etc/passwd`` matches the
+    LFI pattern, ``http://169.254.169.254/`` the SSRF one). A page that merely
+    reflects the input would otherwise count as a signal for every such type.
+    """
+    import html
+    from urllib.parse import quote, quote_plus
+
+    stripped = response_text
+    for variant in {payload, quote(payload, safe=""), quote_plus(payload), html.escape(payload),
+                    html.escape(payload, quote=False)}:
+        if variant:
+            stripped = stripped.replace(variant, "")
+    return stripped
+
+
+def _has_canary_signal(attack_type: str, payload: str, response_text: str, baseline_text: str) -> bool:
+    """True when the canary response shows a signal the unmodified request did not.
+
+    XSS keeps raw reflection as its signal (reflection IS the precondition). Every
+    other type must match its pattern outside the echoed payload AND the pattern
+    must be absent from the baseline — an error string the page always shows is
+    not evidence that our input caused it.
+    """
+    if attack_type == "xss":
+        return payload in response_text
+    pattern = _SIGNAL_PATTERNS.get(attack_type)
+    if pattern is None:
+        return False
+    if not pattern.search(_strip_payload_echo(response_text, payload)):
+        return False
+    return not (baseline_text and pattern.search(baseline_text))
 
 
 async def _run_canary_probe(
@@ -383,10 +419,12 @@ async def _run_canary_probe(
     target: "CheckTarget",
     param: dict,
     attack_type: str,
+    baseline_text: str = "",
 ) -> bool:
     """
     Send a single canary payload for attack_type into param.
-    Returns True if the response contains a signal indicating potential vulnerability.
+    Returns True if the response contains a signal indicating potential vulnerability
+    that is absent from ``baseline_text`` and not just an echo of the payload.
     Time-based types (sqli blind) return False here — the full agent handles timing.
     """
     from dast.scanners.active_checks import _inject_body, _inject_path, _inject_query, _send
@@ -417,22 +455,11 @@ async def _run_canary_probe(
 
         if resp is None:
             return False
-
-        pattern = _signal_PATTERNS_for(attack_type)
-        if pattern and pattern.search(resp.text):
-            return True
-
-        # For XSS: reflection of payload is signal
-        if attack_type == "xss" and payload in resp.text:
-            return True
-
+        return _has_canary_signal(attack_type, payload, resp.text, baseline_text)
+    except Exception as exc:
+        logger.debug("Canary probe failed", attack_type=attack_type,
+                     parameter=param.get("name"), error=str(exc))
         return False
-    except Exception:
-        return False
-
-
-def _signal_PATTERNS_for(attack_type: str) -> Optional[_re.Pattern]:
-    return _SIGNAL_PATTERNS.get(attack_type)
 
 
 # A WAF that blocks an attack type this many times on a host, with no confirmed
@@ -803,8 +830,9 @@ class Coordinator:
                 if param.get("name", "").lower() not in _AUTH_TOKEN_PARAMS
             ]
             if canary_combos:
+                canary_baseline_text = await cls._fetch_canary_baseline(client, target)
                 canary_tasks = [
-                    _run_canary_probe(client, target, param, at)
+                    _run_canary_probe(client, target, param, at, canary_baseline_text)
                     for param, at in canary_combos
                 ]
                 canary_results = await asyncio.gather(*canary_tasks, return_exceptions=True)
@@ -1200,6 +1228,17 @@ class Coordinator:
         # they are not in confirmed_titles, so session intelligence and outcome
         # logs above never treat them as confirmed vulns.
         return confirmed + review
+
+    @classmethod
+    async def _fetch_canary_baseline(cls, client: "httpx.AsyncClient", target: "CheckTarget") -> str:
+        """Send the unmodified request once so canary signals can be diffed against it."""
+        from dast.scanners.active_checks import _send
+        try:
+            resp = await _send(client, target.method, target.url, target.headers, target.body)
+        except Exception as exc:
+            logger.debug("Canary baseline request failed", url=target.url, error=str(exc))
+            return ""
+        return resp.text if resp is not None else ""
 
     @classmethod
     async def _baseline_check(
