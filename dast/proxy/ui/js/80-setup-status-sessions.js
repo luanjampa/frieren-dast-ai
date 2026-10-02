@@ -259,14 +259,6 @@ async function onSettingsFileSelected(event) {
 
 // ── sessions ────────────────────────────────────────────────────────────
 
-function showSessionsPanel() {
-  document.getElementById('sessions-overlay').style.display = 'flex';
-  // pre-fill name input from current session name
-  document.getElementById('new-session-name').value =
-    document.getElementById('session-name').value || 'Untitled session';
-  loadSessionsList();
-}
-
 function hideSessionsPanel() {
   document.getElementById('sessions-overlay').style.display = 'none';
 }
@@ -332,10 +324,6 @@ function _setCurrentSession(id, name) {
     localStorage.removeItem('dast-session-name');
     localStorage.removeItem('dast-session-boot');
   }
-}
-
-function _autoSaveAvailable() {
-  return _autoSaveFileHandle !== null || !window.showSaveFilePicker;
 }
 
 function _showAutoSaveLabel(show) {

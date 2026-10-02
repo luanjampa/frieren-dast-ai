@@ -567,23 +567,6 @@ class SessionStore:
             result.update(self._cookies.get(host, {}))
             return list(result.values())
 
-    def save_named_session(self, name: str, role: str) -> "NamedSession":
-        """Snapshot current proxy cookies + auth headers as a named session."""
-        from dast.proxy.auth_headers import extract_auth_headers
-
-        cookies = {}
-        with self._lock:
-            for jar in self._cookies.values():
-                cookies.update(jar)
-            recent_entries = [
-                self._entries[eid] for eid in reversed(self._order[-50:])
-                if eid in self._entries
-            ]
-            auth_headers = extract_auth_headers(recent_entries, host=None, exclude_sources=())
-        session = NamedSession(name=name, role=role, cookies=cookies, auth_headers=auth_headers)
-        self.named_sessions[name] = session
-        return session
-
     def save_named_session_from_playwright(
         self,
         name: str,

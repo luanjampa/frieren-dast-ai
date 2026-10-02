@@ -100,22 +100,6 @@ def make_router(ctx: DashboardContext) -> APIRouter:
         cookies = store.get_crawl_cookies()
         return {"cookie_count": len(cookies)}
 
-    @router.post("/api/sessions/save")
-    async def save_named_session(body: dict):
-        """Save current proxy cookie jar as a named session (legacy flow)."""
-        name = (body.get("name") or "").strip()
-        role = (body.get("role") or "user").strip()
-        if not name:
-            return JSONResponse({"error": "name required"}, status_code=400)
-        session = store.save_named_session(name, role)
-        return {
-            "ok": True,
-            "name": session.name,
-            "role": session.role,
-            "cookie_count": len(session.cookies),
-            "auth_header_count": len(session.auth_headers),
-        }
-
     @router.post("/api/sessions/browser")
     async def open_named_browser(body: dict):
         """Open an isolated named browser session for multi-user testing."""
@@ -288,13 +272,6 @@ def make_router(ctx: DashboardContext) -> APIRouter:
         if browse_queue:
             await browse_queue.put({"action": "stop"})
         return {"ok": True}
-
-    @router.get("/api/browse/status")
-    async def browse_status():
-        return {
-            "active": store.active_browse_session_id is not None,
-            "session_id": store.active_browse_session_id,
-        }
 
     @router.get("/api/plugins")
     async def get_plugins():

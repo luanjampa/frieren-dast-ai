@@ -193,23 +193,6 @@ async function loginWithCredentials() {
   btn.disabled = false;
 }
 
-async function saveNamedSession() {
-  const name = document.getElementById('session-name-input').value.trim();
-  const role = document.getElementById('session-role-input').value.trim() || 'user';
-  if (!name) { showToast('Enter a session name.'); return; }
-  const r = await fetch('/api/sessions/save', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name, role }),
-  });
-  const d = await r.json();
-  if (!r.ok) { showToast('Error: ' + (d.error || r.status)); return; }
-  showToast(`Session "${name}" saved — ${d.cookie_count} cookie(s), ${d.auth_header_count} auth header(s).`);
-  document.getElementById('session-name-input').value = '';
-  document.getElementById('session-role-input').value = '';
-  loadNamedSessions();
-}
-
 async function loadNamedSessions() {
   const el = document.getElementById('named-sessions-list');
   if (!el) return;
