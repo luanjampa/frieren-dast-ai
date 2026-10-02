@@ -411,7 +411,6 @@ window.addEventListener('unhandledrejection', function(ev) {
   }).catch(() => {});
 });
 
-connect();
 loadOverview();
 setInterval(loadOverview, 10000);
 
