@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from dast.proxy.api.context import DashboardContext
+from dast.proxy.api.context import DashboardContext, prune_jobs
 from dast.utils.logger import get_logger
 from dast.utils.tasks import spawn_tracked
 
@@ -108,6 +108,7 @@ def make_router(ctx: DashboardContext) -> APIRouter:
             "cancel": False,
         }
         intruder_jobs[job_id] = job
+        prune_jobs(intruder_jobs)
 
         headers: dict = {}
         for line in headers_raw.splitlines():

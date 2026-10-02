@@ -511,7 +511,7 @@ class SessionStore:
                     "domain": morsel["domain"] or host,
                     "path": morsel["path"] or "/",
                     "secure": bool(morsel["secure"]),
-                    "httpOnly": "httponly" in cookie_str.lower(),
+                    "httpOnly": bool(morsel["httponly"]),
                 }
 
     def get_cookie_hosts(self) -> List[str]:
@@ -557,10 +557,11 @@ class SessionStore:
     def get_cookies_for_host(self, host: str) -> List[dict]:
         """Return Playwright-compatible cookie dicts for the given host."""
         with self._lock:
-            # Collect cookies from the exact host and any parent domain match
+            # Collect cookies from the exact host and its parent domains. A
+            # subdomain's cookies are never sent to its parent (browser semantics).
             result = {}
             for h, jar in self._cookies.items():
-                if h == host or host.endswith("." + h) or h.endswith("." + host):
+                if h == host or host.endswith("." + h):
                     result.update(jar)
             # Also exact host
             result.update(self._cookies.get(host, {}))
@@ -823,9 +824,14 @@ class SessionStore:
             ]
 
     def clear(self) -> None:
+        """Clear captured history. Cookies and named sessions are kept on purpose —
+        clearing the history must not log the operator out of the target."""
         with self._lock:
             self._entries.clear()
             self._order.clear()
+            # Parked imported findings wait for a matching history entry; with the
+            # history gone they would attach to unrelated future traffic.
+            self.pending_import_findings = []
         # Give previously-unreachable hosts a fresh chance after a clear —
         # the network may have changed (VPN up, DNS propagated).
         try:

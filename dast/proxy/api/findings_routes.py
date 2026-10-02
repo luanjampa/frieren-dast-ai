@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
-from dast.proxy.api.context import DashboardContext
+from dast.proxy.api.context import DashboardContext, prune_jobs
 from dast.utils.logger import get_logger
 from dast.utils.tasks import spawn_tracked
 
@@ -36,6 +36,7 @@ def make_router(ctx: DashboardContext) -> APIRouter:
 
         job_id = str(uuid.uuid4())
         import_jobs[job_id] = {"status": "parsing", "progress": None, "result": None, "error": None}
+        prune_jobs(import_jobs)
         spawn_tracked(_run_import_job(job_id, content, target_hosts, base_url), name=f"import-{job_id}")
         return {"job_id": job_id}
 

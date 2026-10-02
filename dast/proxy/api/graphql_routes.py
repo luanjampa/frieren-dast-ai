@@ -327,6 +327,8 @@ def make_router(ctx: "DashboardContext") -> APIRouter:
             "status": "queued", "progress": {"done": 0, "total": len(attempts)},
             "results": [], "cancel": False,
         }
+        from dast.proxy.api.context import prune_jobs
+        prune_jobs(fuzz_jobs)
 
         from dast.graphql.variable_fuzzer import run_fuzz_job
         spawn_tracked(run_fuzz_job(

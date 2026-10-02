@@ -25,6 +25,17 @@ if TYPE_CHECKING:
     from dast.proxy.api.copilot_service import CopilotService
 
 
+# Background-job registries (Intruder, findings import, GraphQL fuzz) keep full
+# results in memory; cap them so a long session does not grow without bound.
+MAX_RETAINED_JOBS = 50
+
+
+def prune_jobs(jobs: dict, max_jobs: int = MAX_RETAINED_JOBS) -> None:
+    """Drop the oldest jobs (dict insertion order) until at most ``max_jobs`` remain."""
+    while len(jobs) > max_jobs:
+        jobs.pop(next(iter(jobs)))
+
+
 @dataclass
 class DashboardContext:
     store: "SessionStore"
