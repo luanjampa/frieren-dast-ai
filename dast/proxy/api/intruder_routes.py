@@ -10,6 +10,7 @@ import uuid
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from dast.proxy.api.http_utils import strip_recomputed_headers
 from dast.proxy.api.context import DashboardContext, prune_jobs
 from dast.utils.logger import get_logger
 from dast.utils.tasks import spawn_tracked
@@ -115,9 +116,7 @@ def make_router(ctx: DashboardContext) -> APIRouter:
             idx = line.find(":")
             if idx > 0:
                 headers[line[:idx].strip()] = line[idx + 1:].strip()
-        for hop in ("host", "content-length", "transfer-encoding", "connection", "accept-encoding"):
-            headers.pop(hop, None)
-            headers.pop(hop.title(), None)
+        headers = strip_recomputed_headers(headers)
 
         _error_sigs = [
             r"sql syntax",

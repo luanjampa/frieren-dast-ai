@@ -13,6 +13,7 @@ import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from dast.proxy.api.http_utils import strip_recomputed_headers
 from dast.utils.logger import get_logger
 from dast.utils.tasks import spawn_tracked
 
@@ -303,9 +304,7 @@ def make_router(ctx: "DashboardContext") -> APIRouter:
 
         attempts = build_fuzz_matrix(variables, payloads)
 
-        for hop in ("host", "content-length", "transfer-encoding", "connection", "accept-encoding"):
-            headers.pop(hop, None)
-            headers.pop(hop.title(), None)
+        headers = strip_recomputed_headers(headers)
         headers.setdefault("content-type", "application/json")
 
         # Baseline request to compare fuzzed responses against.
