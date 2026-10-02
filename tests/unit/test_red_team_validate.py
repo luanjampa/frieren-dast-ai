@@ -39,6 +39,7 @@ class _FakeFinding:
     raw_response: str = ""
     probe_request: str = ""
     probe_response: str = ""
+    confidence: Optional[float] = None
 
 
 @dataclass
@@ -178,8 +179,8 @@ async def test_llm_rejects_even_when_final_confidence_would_clear_threshold(monk
     confirmed, confidence, reasoning = await red_team.validate(finding, target, confidence_threshold=0.5)
 
     assert confirmed is False
-    # final_confidence is still max(pattern_conf, llm_confidence) = 0.80
-    assert confidence == pytest.approx(0.80)
+    # A rejection reports the LLM's own confidence, not the 0.80 pattern score
+    assert confidence == pytest.approx(0.1)
 
 
 # ── validate() — threshold boundary ─────────────────────────────────────────
@@ -373,3 +374,37 @@ def test_detection_method_browser_additive_with_ai():
 def test_system_prompt_embeds_untrusted_content_directive():
     from dast.ai.prompt_safety import UNTRUSTED_CONTENT_DIRECTIVE
     assert UNTRUSTED_CONTENT_DIRECTIVE in red_team._SYSTEM
+
+
+
+# ── pattern-only fallback, browser-negative cap, response head ─────────────
+
+@pytest.mark.asyncio
+async def test_browser_negative_caps_confidence_at_llm_view(monkeypatch):
+    monkeypatch.setattr(bedrock_client, "invoke_json", lambda *a, **k: {
+        "confirmed": True, "confidence": 0.6, "exploit_scenario": "x", "reasoning": "r",
+    })
+    finding = _FakeFinding(attack_type="xss", browser_confirmed=False, browser_confirm_reason="csp_or_sink")
+    _, confidence, _ = await red_team.validate(finding, _FakeTarget(), confidence_threshold=0.5)
+    assert confidence == pytest.approx(0.6)
+    assert finding.confidence == pytest.approx(0.6)
+
+
+@pytest.mark.asyncio
+async def test_prompt_includes_fenced_response_headers(monkeypatch):
+    seen = {}
+
+    def _fake(**kwargs):
+        seen.update(kwargs)
+        return {"confirmed": False, "confidence": 0.1, "exploit_scenario": "", "reasoning": "r"}
+
+    monkeypatch.setattr(bedrock_client, "invoke_json", _fake)
+    finding = _FakeFinding(
+        attack_type="xss",
+        evidence="payload reflected in body",
+        probe_response="HTTP/1.1 200\r\ncontent-type: application/json\r\n\r\n{\"a\": 1}",
+    )
+    await red_team.validate(finding, _FakeTarget(), confidence_threshold=0.5)
+    assert "<response_headers>" in seen["user"]
+    assert "content-type: application/json" in seen["user"]
+    assert "<payload>" in seen["user"] and "<evidence>" in seen["user"]

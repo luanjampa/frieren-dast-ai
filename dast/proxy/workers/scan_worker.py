@@ -336,6 +336,9 @@ async def run_scan_worker(runner: "ProxyRunner", config: "ScanConfig", session_m
                     # availability (the live "AI offline" status is decoupled).
                     if "ai" in validated_by:
                         finding_dict["validated_at"] = datetime.now(timezone.utc).isoformat()
+                    confidence = getattr(f, "confidence", None)
+                    if confidence is not None:
+                        finding_dict["confidence"] = round(float(confidence), 2)
                     snippet = getattr(f, "raw_response_snippet", "")
                     if snippet:
                         finding_dict["snippet"] = snippet[:400]
