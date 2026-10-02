@@ -28,6 +28,13 @@ def make_router(ctx: DashboardContext) -> APIRouter:
         url = body.get("url", "").strip()
         if not url:
             return JSONResponse({"error": "url required"}, status_code=400)
+        # Same gate as /api/discovery: the crawler clicks through the app, so it
+        # must never be started against an out-of-scope host.
+        if settings is not None and not settings.is_in_scope(url):
+            return JSONResponse(
+                {"error": "url is out of scope — add it to the Target scope first"},
+                status_code=400,
+            )
 
         async def log_cb(msg: str) -> None:
             await ctx.broadcast_crawl_log(msg)
