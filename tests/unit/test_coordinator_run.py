@@ -571,3 +571,36 @@ class TestAdaptiveBudget:
         params = [{"name": f"p{i}", "location": "query", "value": "1"} for i in range(5)]
         target = _target(method="POST", params=params)
         assert Coordinator._adaptive_budget(target, None) == 150.0
+
+
+# ── budget timeout keeps confirmed findings ───────────────────────────────
+
+@pytest.mark.asyncio
+async def test_budget_timeout_keeps_deterministic_findings_from_finished_agents():
+    fast_finding = _finding(bypass_validation=True, attack_type="_timeout_fast")
+
+    class _FastAgent(VulnAgent):
+        name = "Fast"
+        attack_type = "_timeout_fast"
+        description = ""
+        async def run(self, target, client, collaborator=None):
+            return [fast_finding]
+
+    class _SlowAgent(VulnAgent):
+        name = "Slow"
+        attack_type = "_timeout_slow"
+        description = ""
+        async def run(self, target, client, collaborator=None):
+            await asyncio.sleep(10)
+            return []
+
+    _activity_log.clear()
+    with _Registry():
+        Coordinator.register(_FastAgent)
+        Coordinator.register(_SlowAgent)
+        with patch.object(Coordinator, "_plan", new=AsyncMock(
+                return_value=(["_timeout_fast", "_timeout_slow"], "reason", False))), \
+             patch("dast.ai.coordinator._run_canary_probe", new=AsyncMock(return_value=False)):
+            result = await Coordinator.run(_target(), MagicMock(), budget_seconds=0.5)
+
+    assert result == [fast_finding]

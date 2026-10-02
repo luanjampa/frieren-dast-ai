@@ -360,6 +360,9 @@ _CANARY_PAYLOADS: Dict[str, str] = {
     "xxe":    '<?xml version="1.0"?><!DOCTYPE x [<!ENTITY xxe "dast">]><x>&xxe;</x>',
 }
 
+# Prefix of the _baseline_check() abort reason for a 401/403 auth wall
+_AUTH_WALL_REASON_PREFIX = "[auth-wall]"
+
 # Patterns that indicate signal for each attack type in the canary response
 _SIGNAL_PATTERNS: Dict[str, _re.Pattern] = {
     "sqli": _re.compile(
@@ -901,11 +904,24 @@ class Coordinator:
             target.method in ("GET", "POST", "PUT", "PATCH", "DELETE")
             and (bool(target.body) or bool(target.params))
         )
+        auth_wall = False
         if _run_baseline:
             from dast.ai.bedrock_client import get_fast_model as _get_fast
             baseline_abort, baseline_response_summary = await cls._baseline_check(
                 target, client, model_id=model_id or _get_fast()
             )
+            if baseline_abort and baseline_abort.startswith(_AUTH_WALL_REASON_PREFIX):
+                # An auth wall is not a structural error (it is session state and
+                # must not blacklist the path), and it is exactly where header-based
+                # auth bypass applies — so run that agent alone instead of aborting.
+                auth_wall = True
+                _log_event(
+                    "coordinator", "info",
+                    f"Baseline hit an auth wall — running auth bypass only: "
+                    f"{baseline_abort[len(_AUTH_WALL_REASON_PREFIX):].strip()}",
+                    url=target.url, source="agent",
+                )
+                baseline_abort = None
             if baseline_abort:
                 # Record structural error in session intelligence so future scans
                 # on the same path don't repeat the same mistake
@@ -944,7 +960,10 @@ class Coordinator:
         # The planner now receives the baseline response so it can reason about
         # what the endpoint actually does, not just its URL structure.
         mine_params = False
-        if use_llm_planner:
+        if auth_wall:
+            selected_types = ["auth_bypass"]
+            plan_reason = "Baseline returned 401/403 — only auth bypass applies"
+        elif use_llm_planner:
             from dast.ai.bedrock_client import get_fast_model
             plan_model = model_id or get_fast_model()
             selected_types, plan_reason, mine_params = await cls._plan(
@@ -1323,9 +1342,10 @@ class Coordinator:
             except Exception as exc:
                 logger.debug("failed to parse GraphQL errors in baseline response", error=str(exc))
 
-        # 401/403 on a baseline request — auth wall, abort to avoid 401 flooding.
+        # 401/403 on a baseline request — auth wall. The caller runs only the
+        # auth-bypass agent (injection agents would just flood 401s).
         if resp.status_code in (401, 403):
-            return f"HTTP {resp.status_code} — server rejected baseline request (auth required or forbidden)", response_summary
+            return f"{_AUTH_WALL_REASON_PREFIX} HTTP {resp.status_code} — server rejected baseline request (auth required or forbidden)", response_summary
 
         # ── LLM analysis for ambiguous cases ─────────────────────────────
         should_ask_llm = (
