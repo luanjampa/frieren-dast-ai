@@ -224,6 +224,7 @@ class SpaCrawler:
             stale_rounds = 0
             revisited: set = set()
             while clicks < max_clicks and not self._stop.is_set():
+                url_before = page.url
                 clicks_before = len(clicked_fps)
 
                 # Interact with current page
