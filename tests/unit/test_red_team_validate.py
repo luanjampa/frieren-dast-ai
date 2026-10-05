@@ -347,7 +347,7 @@ async def test_ai_unavailable_does_not_hold_weak_finding(monkeypatch):
 # ── _detection_method — label honesty ────────────────────────────────────────
 
 def test_detection_method_ai_only_when_ai_validated():
-    from dast.proxy.runner import _detection_method
+    from dast.proxy.scan_support import detection_method as _detection_method
 
     validated = _FakeFinding(bypass_validation=False, ai_validated=True, browser_confirmed=None)
     assert _detection_method(validated) == ["ai"]
@@ -359,7 +359,7 @@ def test_detection_method_ai_only_when_ai_validated():
 
 
 def test_detection_method_browser_additive_with_ai():
-    from dast.proxy.runner import _detection_method
+    from dast.proxy.scan_support import detection_method as _detection_method
 
     f = _FakeFinding(attack_type="xss", bypass_validation=False,
                      ai_validated=True, browser_confirmed=True)
