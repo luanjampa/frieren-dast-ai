@@ -99,7 +99,7 @@ async function loadOverview() {
             }).join('');
             return `
             <tr style="border-bottom:1px solid var(--bdr3,#252525);cursor:pointer"
-                onclick="goToEntry('${esc(f.entry_id||'')}')">
+                onclick="goToEntry(${jsArg(f.entry_id||'')})">
               <td style="padding:4px 8px;color:${_SEV_COLOR[f.severity]||'var(--txt2)'}">
                 ${esc(f.severity||'?')}
               </td>

@@ -140,9 +140,9 @@ async function loadNamedBrowsers() {
             Log in, then:
           </span>
           <button class="tbtn pri" style="font-size:10px;padding:2px 8px"
-                  onclick="saveNamedBrowser('${esc(b.name)}')">Save Session</button>
+                  onclick="saveNamedBrowser(${jsArg(b.name)})">Save Session</button>
           <button class="tbtn del" style="font-size:10px;padding:2px 8px"
-                  onclick="stopNamedBrowser('${esc(b.name)}')">Close</button>
+                  onclick="stopNamedBrowser(${jsArg(b.name)})">Close</button>
         </div>`).join('');
   } catch (_) {}
 }
@@ -219,7 +219,7 @@ async function loadNamedSessions() {
         <span style="background:var(--bg3);color:var(--txt2);padding:1px 6px;border-radius:10px;font-size:10px">${esc(s.role)}</span>
         <span style="color:var(--txt2);font-size:10px">${s.cookie_count} cookie${s.cookie_count !== 1 ? 's' : ''}</span>
         <button class="tbtn del" style="margin-left:auto;font-size:10px;padding:1px 7px"
-                onclick="deleteNamedSession('${esc(s.name)}')">Remove</button>
+                onclick="deleteNamedSession(${jsArg(s.name)})">Remove</button>
       </div>`).join('');
   } catch (_) {
     el.textContent = 'Could not load sessions.';

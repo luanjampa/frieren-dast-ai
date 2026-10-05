@@ -284,10 +284,10 @@ async function loadSessionsList() {
             ${s.description ? ' · ' + esc(s.description) : ''}
           </div>
         </div>
-        <button class="tbtn pri" onclick="loadSession('${esc(s.id)}','${esc(s.name)}')">Open</button>
+        <button class="tbtn pri" onclick="loadSession(${jsArg(s.id)},${jsArg(s.name)})">Open</button>
         <a class="tbtn" href="/api/sessions/${esc(s.id)}/download" download="${esc(s.name)}.json"
            style="text-decoration:none">Export</a>
-        <button class="tbtn del" onclick="deleteSession('${esc(s.id)}')">Delete</button>
+        <button class="tbtn del" onclick="deleteSession(${jsArg(s.id)})">Delete</button>
       </div>`).join('');
   } catch(e) {
     el.innerHTML = '<div class="empty">Failed to load sessions</div>';
