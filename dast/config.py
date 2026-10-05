@@ -112,25 +112,8 @@ class Settings(BaseSettings):
 
     # Output
     output_dir: Path = Path("./scan-results")
-    report_format: str = "html,json,markdown"
-
-    # Database
-    database_url: str = "sqlite+aiosqlite:///./dast.db"
 
     aws_session_token: Optional[str] = None
-
-    def validate_aws(self) -> bool:
-        if self.aws_profile:
-            return True
-        if self.aws_access_key_id and self.aws_secret_access_key:
-            return True
-        try:
-            import boto3
-            session = boto3.Session(region_name=self.aws_region)
-            creds = session.get_credentials()
-            return creds is not None and creds.get_frozen_credentials() is not None
-        except Exception:
-            return False
 
     def build_boto3_session(self):
         """
