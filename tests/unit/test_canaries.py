@@ -1,6 +1,5 @@
 """Shared probe markers and canary-signal logic."""
 
-import yaml
 
 from dast.ai.canaries import (
     OPEN_REDIRECT_CANARY_HOST,
