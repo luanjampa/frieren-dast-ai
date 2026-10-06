@@ -589,9 +589,16 @@ class Coordinator:
     def registered_types(cls) -> List[str]:
         return list(cls._registry.keys())
 
-    # Ceiling used only when budget_seconds is not passed in.
+    # Ceiling used only when budget_seconds is not passed in and the caller gives
+    # no budget_ceiling (the operator's "Scan Budget per Endpoint" setting).
     # The actual per-scan budget is computed adaptively by _adaptive_budget().
     SCAN_BUDGET_SECONDS: float = 300.0
+
+    # A local model (Ollama/LM Studio on one machine) answers each LLM call in
+    # seconds-to-tens-of-seconds and serves calls one at a time, so the adaptive
+    # budgets tuned for cloud latency expire before the agents send their real
+    # payloads (observed: 19 LLM calls across a whole Juice Shop bench run).
+    LOCAL_BUDGET_MULTIPLIER: float = 4.0
 
     @classmethod
     def _adaptive_budget(
@@ -661,6 +668,25 @@ class Coordinator:
         return 150.0
 
     @classmethod
+    def _effective_budget(
+        cls,
+        target: "CheckTarget",
+        host_intel: Optional[object],
+        budget_ceiling: Optional[float] = None,
+    ) -> float:
+        """Adaptive budget, stretched for a local model, capped by the ceiling.
+
+        ``budget_ceiling`` is the operator's "Scan Budget per Endpoint" setting;
+        without it the class-level SCAN_BUDGET_SECONDS applies.
+        """
+        from dast.ai import bedrock_client
+
+        adaptive_budget = cls._adaptive_budget(target, host_intel)
+        if bedrock_client.is_local_provider():
+            adaptive_budget *= cls.LOCAL_BUDGET_MULTIPLIER
+        return min(adaptive_budget, budget_ceiling or cls.SCAN_BUDGET_SECONDS)
+
+    @classmethod
     async def run(
         cls,
         target: "CheckTarget",
@@ -672,6 +698,7 @@ class Coordinator:
         session_intelligence: Optional[object] = None,
         budget_seconds: Optional[float] = None,
         probe_diff: bool = False,
+        budget_ceiling: Optional[float] = None,
     ) -> List[AgentFinding]:
         if not cls._registry:
             return []
@@ -686,10 +713,7 @@ class Coordinator:
                     _host_intel0 = session_intelligence.get(_h0)
                 except Exception as exc:
                     logger.debug("failed to read session intelligence for budget", host=_h0, error=str(exc))
-            effective_budget = min(
-                cls._adaptive_budget(target, _host_intel0),
-                cls.SCAN_BUDGET_SECONDS,
-            )
+            effective_budget = cls._effective_budget(target, _host_intel0, budget_ceiling)
         else:
             effective_budget = budget_seconds
 

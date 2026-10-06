@@ -276,6 +276,11 @@ async def run_scan_worker(runner: "ProxyRunner", config: "ScanConfig", session_m
                     budget_override = float(
                         runner._engine_config.get("scan_budget_seconds", 300) or 300
                     )
+                # The operator's "Scan Budget per Endpoint" is the hard ceiling
+                # for every scan, not only imported entries (the UI promises it).
+                budget_ceiling = float(
+                    runner._engine_config.get("scan_budget_seconds", 300) or 300
+                )
                 findings = await run_active_checks(
                     target, proxy_url=proxy_url, model_id=model_id,
                     confidence_threshold=confidence_threshold,
@@ -283,6 +288,7 @@ async def run_scan_worker(runner: "ProxyRunner", config: "ScanConfig", session_m
                     budget_seconds=budget_override,
                     probe_diff=bool(runner._engine_config.get("probe_diff", False)),
                     taint_store=runner._store.taint_store,
+                    budget_ceiling=budget_ceiling,
                 )
             except asyncio.CancelledError:
                 logger.info("Active scan cancelled by user", url=entry.url)

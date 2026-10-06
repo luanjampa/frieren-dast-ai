@@ -12,6 +12,7 @@ Credential priority (matches orchestrator-ai):
   3. Default boto3 chain (instance profile, env vars, ~/.aws/credentials)
 """
 
+import contextlib
 import json
 import threading
 import time
@@ -199,6 +200,56 @@ def set_provider(
 def get_active_provider() -> str:
     from dast.config import settings
     return (_active_provider or settings.ai_provider or "bedrock").strip().lower()
+
+
+def is_local_provider() -> bool:
+    """True when LLM calls go to a local / self-hosted OpenAI-compatible server.
+
+    That is the ``openai`` provider pointed at anything other than the public
+    OpenAI API (Ollama, LM Studio, vLLM, llama.cpp). Such a server runs on one
+    machine's hardware, so callers adapt: serialize calls and allow longer
+    budgets.
+    """
+    if get_active_provider() != "openai":
+        return False
+    from dast.config import settings
+    from dast.ai import providers
+
+    return not providers.is_public_openai(_openai_base_url or settings.openai_base_url)
+
+
+# Concurrency gate for external provider calls (see _provider_slot).
+_concurrency_lock = threading.Lock()
+_concurrency_semaphore: Optional[threading.BoundedSemaphore] = None
+_concurrency_limit = 0
+
+
+def _effective_concurrency_limit() -> int:
+    """Max concurrent external calls; 0 means unlimited.
+
+    ``ai_max_concurrency`` > 0 wins. Otherwise a local server gets 1 — it serves
+    one request at a time, so parallel agent calls only queue server-side, pile
+    up past the read timeout, and get retried — and cloud providers are unlimited.
+    """
+    from dast.config import settings
+
+    configured = int(getattr(settings, "ai_max_concurrency", 0) or 0)
+    if configured > 0:
+        return configured
+    return 1 if is_local_provider() else 0
+
+
+def _provider_slot():
+    """Context manager that holds one external-call slot (a no-op when unlimited)."""
+    global _concurrency_semaphore, _concurrency_limit
+    limit = _effective_concurrency_limit()
+    if limit <= 0:
+        return contextlib.nullcontext()
+    with _concurrency_lock:
+        if _concurrency_semaphore is None or _concurrency_limit != limit:
+            _concurrency_semaphore = threading.BoundedSemaphore(limit)
+            _concurrency_limit = limit
+        return _concurrency_semaphore
 
 
 def provider_api_key_present() -> bool:
@@ -471,6 +522,36 @@ def _log_cache_usage(result: Dict[str, Any]) -> None:
         logger.debug("Bedrock cache usage", cache_read=read, cache_creation=created)
 
 
+def _dispatch_external(provider: str, body: Dict[str, Any], model: str) -> Dict[str, Any]:
+    """Send one request to the named non-Bedrock provider (no retry)."""
+    from dast.config import settings
+    from dast.ai import providers
+
+    if provider == "anthropic":
+        return providers.invoke_anthropic(
+            body=body,
+            model_id=model,
+            api_key=_anthropic_api_key or (settings.anthropic_api_key or ""),
+            base_url=_anthropic_base_url or settings.anthropic_base_url,
+        )
+    if provider == "openai":
+        return providers.invoke_openai(
+            body=body,
+            model_id=model,
+            api_key=_openai_api_key or (settings.openai_api_key or ""),
+            base_url=_openai_base_url or settings.openai_base_url,
+        )
+    if provider == "gateway":
+        return providers.invoke_gateway(
+            body=body,
+            model_id=model,
+            # No API key: the gateway reuses the CLI OAuth session.
+            api_key="",
+            base_url=_gateway_base_url or settings.gateway_base_url,
+        )
+    raise providers.ProviderError(f"Unknown AI provider: {provider}")
+
+
 def _invoke_external(
     provider: str,
     body: Dict[str, Any],
@@ -479,38 +560,16 @@ def _invoke_external(
     """
     Route a request to a non-Bedrock provider (Anthropic direct / OpenAI) and
     return an Anthropic-style envelope. Retries transient HTTP errors with the
-    same backoff schedule as the Bedrock path.
+    same backoff schedule as the Bedrock path. Each attempt holds a concurrency
+    slot (see _provider_slot) that is released during the backoff sleep.
     """
-    from dast.config import settings
     from dast.ai import providers
 
     delay = 2
     for attempt in range(3):
         try:
-            if provider == "anthropic":
-                return providers.invoke_anthropic(
-                    body=body,
-                    model_id=model,
-                    api_key=_anthropic_api_key or (settings.anthropic_api_key or ""),
-                    base_url=_anthropic_base_url or settings.anthropic_base_url,
-                )
-            if provider == "openai":
-                return providers.invoke_openai(
-                    body=body,
-                    model_id=model,
-                    api_key=_openai_api_key or (settings.openai_api_key or ""),
-                    base_url=_openai_base_url or settings.openai_base_url,
-                )
-            if provider == "gateway":
-                return providers.invoke_gateway(
-                    body=body,
-                    model_id=model,
-                    # No API key: the gateway reuses the CLI OAuth session.
-                    api_key="",
-                    base_url=_gateway_base_url or settings.gateway_base_url,
-                )
-            raise providers.ProviderError(f"Unknown AI provider: {provider}")
-
+            with _provider_slot():
+                return _dispatch_external(provider, body, model)
         except providers.ProviderError as exc:
             # Transient errors — a 429 (rate limit) or any 5xx (server-side) — are
             # worth retrying with backoff, matching the Bedrock throttling path.

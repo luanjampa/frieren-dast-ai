@@ -573,6 +573,30 @@ class TestAdaptiveBudget:
         assert Coordinator._adaptive_budget(target, None) == 150.0
 
 
+class TestEffectiveBudget:
+    def test_cloud_provider_keeps_adaptive_budget(self, monkeypatch):
+        from dast.ai import bedrock_client
+        monkeypatch.setattr(bedrock_client, "is_local_provider", lambda: False)
+        assert Coordinator._effective_budget(_target(), None) == 150.0
+
+    def test_local_provider_stretches_budget_up_to_operator_ceiling(self, monkeypatch):
+        # A local model needs far longer per call; 150s * 4 = 600s, within 900s.
+        from dast.ai import bedrock_client
+        monkeypatch.setattr(bedrock_client, "is_local_provider", lambda: True)
+        assert Coordinator._effective_budget(_target(), None, budget_ceiling=900.0) == 600.0
+
+    def test_local_provider_still_capped_by_default_ceiling(self, monkeypatch):
+        from dast.ai import bedrock_client
+        monkeypatch.setattr(bedrock_client, "is_local_provider", lambda: True)
+        assert Coordinator._effective_budget(_target(), None) == Coordinator.SCAN_BUDGET_SECONDS
+
+    def test_operator_ceiling_caps_the_adaptive_budget(self, monkeypatch):
+        # The "Scan Budget per Endpoint" setting is a hard ceiling for every scan.
+        from dast.ai import bedrock_client
+        monkeypatch.setattr(bedrock_client, "is_local_provider", lambda: False)
+        assert Coordinator._effective_budget(_target(), None, budget_ceiling=60.0) == 60.0
+
+
 # ── budget timeout keeps confirmed findings ───────────────────────────────
 
 @pytest.mark.asyncio

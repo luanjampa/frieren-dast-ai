@@ -1474,6 +1474,7 @@ async def run_active_checks(
     budget_seconds: Optional[float] = None,
     probe_diff: bool = False,
     taint_store: Optional[object] = None,
+    budget_ceiling: Optional[float] = None,
 ):
     """
     Run all active checks against a single endpoint via the Coordinator.
@@ -1511,4 +1512,5 @@ async def run_active_checks(
                 session_intelligence=session_intelligence,
                 budget_seconds=budget_seconds,
                 probe_diff=probe_diff,
+                budget_ceiling=budget_ceiling,
             )

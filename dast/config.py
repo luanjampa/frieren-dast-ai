@@ -41,6 +41,21 @@ class Settings(BaseSettings):
     # OpenAI (or OpenAI-compatible) API
     openai_api_key: Optional[str] = None
     openai_base_url: str = "https://api.openai.com/v1"
+    # How structured output is requested from an OpenAI-compatible server:
+    #   "auto"        — json_schema constrained decoding for local/self-hosted
+    #                   servers (Ollama, LM Studio, vLLM, llama.cpp), a forced tool
+    #                   call for the public OpenAI API
+    #   "tools"       — always a forced tool call
+    #   "json_schema" — always response_format json_schema
+    # Local servers often ignore a forced tool_choice (Ollama + Qwen writes the
+    # call out as text), while constrained decoding guarantees schema-valid JSON.
+    openai_structured_output: str = "auto"
+
+    # Max concurrent LLM calls to an external provider. 0 = auto: 1 for a local
+    # OpenAI-compatible server (one GPU serves one request at a time, so parallel
+    # agent calls only queue server-side and hit the read timeout), unlimited
+    # for cloud providers.
+    ai_max_concurrency: int = 0
 
     # Claude apps gateway — the base URL is an INTERNAL hostname, so it has NO
     # default here (this repo is public). Set GATEWAY_BASE_URL in .env. Auth is
