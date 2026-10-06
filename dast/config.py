@@ -80,18 +80,27 @@ class Settings(BaseSettings):
     def ai_model_label(self) -> str:
         """Return a short human-readable label for the active model."""
         active = self.ai_model_id
-        if self.anthropic_default_sonnet_model and active == self.anthropic_default_sonnet_model:
-            return "sonnet"
-        if self.anthropic_default_haiku_model and active == self.anthropic_default_haiku_model:
-            return "haiku"
-        if self.anthropic_default_opus_model and active == self.anthropic_default_opus_model:
-            return "opus"
-        # Fall back to parsing the model ID string
+        # A Claude model name carries its tier in the string — trust that first.
         import re
         m = re.search(r'claude-(opus|sonnet|haiku)', active, re.IGNORECASE)
         if m:
             return m.group(1).lower()
-        return active.split("/")[-1].split(".")[-1] or active
+        # Bedrock application-inference-profile ARNs are opaque (the tier is not
+        # in the string), so map them to a tier via the configured slots — but
+        # ONLY for ARNs. A non-Claude model reused as a tier default (e.g. a
+        # local Ollama model set as anthropic_default_sonnet_model) must not be
+        # mislabelled "sonnet": it would claim Claude when the scanner is really
+        # calling a local/gateway/OpenAI model.
+        if active.startswith("arn:aws:"):
+            if self.anthropic_default_sonnet_model and active == self.anthropic_default_sonnet_model:
+                return "sonnet"
+            if self.anthropic_default_haiku_model and active == self.anthropic_default_haiku_model:
+                return "haiku"
+            if self.anthropic_default_opus_model and active == self.anthropic_default_opus_model:
+                return "opus"
+        # Non-Claude / non-ARN (gateway, OpenAI, local Ollama): show the real
+        # model name so the badge never claims a model that is not in use.
+        return active.split("/")[-1] or active
 
     # Scan behaviour
     max_depth: int = 5
