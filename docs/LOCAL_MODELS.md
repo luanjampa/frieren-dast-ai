@@ -11,6 +11,30 @@ model your server can serve.
 
 ---
 
+## Reality check — local is for development, not real scans
+
+Running locally is **slow and far less accurate** than a frontier model (Bedrock / the internal
+gateway / Opus). Set expectations before you invest time:
+
+- **Slow.** A single scan is dozens of LLM calls (planner, canary, per-agent payload decisions,
+  mutator rounds, red-team validation). On consumer hardware each call is seconds, so one endpoint
+  takes **minutes**, and the coordinator will frequently hit its per-endpoint time budget and give
+  up before finishing. A full target sweep that is minutes on Opus can be hours locally.
+- **Low recall.** Frieren's whole value is a high true-positive, low false-positive rate, and that
+  is driven by model reasoning. Small local models miss real vulns and misjudge exploitability.
+  Measured example: **`qwen2.5:7b-instruct` on an M3/16GB scored 0% recall** on the Juice Shop
+  live bench (`tests/live/ground_truth/juiceshop.yaml`) — it found none of the planted SQLi / XSS /
+  NoSQL / open-redirect. A ≥ 14B model does better but still trails a frontier model.
+- **Flaky structured output.** 7B models often fail the forced `tool_choice` call, so decisions
+  fall back to best-effort text parsing (you will see `no tool_use block returned; parsing text`
+  in the logs) — another accuracy hit.
+
+**Use local for:** running the pipeline end-to-end without cloud credentials, developing/debugging
+agents and plugins, and CI-style smoke tests. **Use a frontier model for:** any run where the
+findings matter. The `.env` keeps both configs side by side so you can switch providers in seconds.
+
+---
+
 ## Before you start — two hard requirements
 
 Frieren is not a chatbot; it drives an agentic scanner. These are the difference between
