@@ -643,10 +643,11 @@ def _invoke_json_as_text(
         system=text_system, user=text_user, model_id=model_id, max_tokens=max_tokens,
         temperature=temperature, cache_system=cache_system,
     )
-    return _parse_json_or_repair(
+    parsed = _parse_json_or_repair(
         raw=raw, system=text_system, user=text_user, model_id=model_id,
         max_tokens=max_tokens, temperature=temperature, cache_system=cache_system,
     )
+    return _coerce_structured(parsed, schema) if schema else parsed
 
 
 def _parse_json_or_repair(
@@ -681,6 +682,79 @@ def _parse_json_or_repair(
             max_tokens=max_tokens, temperature=temperature, cache_system=cache_system,
         )
         return json.loads(_strip_json_fence(raw2))
+
+
+# Keys OpenAI-style function calls use for the call's arguments.
+_TOOL_CALL_ARGUMENT_KEYS = ("arguments", "parameters")
+
+
+def _require_fields(structured: Dict[str, Any], schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Fail when ``structured`` lacks a key the schema marks required.
+
+    Providers do not strictly validate structured output against the schema; a
+    missing required field must fail here, not be read by the caller as a default.
+    """
+    missing = [key for key in schema.get("required", []) if key not in structured]
+    if missing:
+        raise ValueError(f"Structured output missing required field(s): {', '.join(missing)}")
+    return structured
+
+
+def _unwrap_text_tool_call(
+    parsed: Dict[str, Any], schema: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Return the arguments of a function call the model wrote out as text.
+
+    Local OpenAI-compatible servers (Ollama with Qwen, llama.cpp) often ignore a
+    forced ``tool_choice`` and put the call in the text content in OpenAI's
+    function-call shape — ``{"name": "...", "arguments": {...}}`` — so the parsed
+    JSON is the wrapper, not the decision. Only unwrap when the object does not
+    already satisfy the schema (a required key is missing, or none of its keys are
+    schema properties) and the schema does not itself declare the wrapper key.
+    """
+    declared = set((schema.get("properties") or {}).keys())
+    required = schema.get("required", [])
+    already_satisfies = all(key in parsed for key in required) and (
+        not declared or bool(declared & set(parsed))
+    )
+    if already_satisfies:
+        return None
+    # A call to some OTHER tool (e.g. the copilot model calling `browser_snapshot`
+    # directly instead of filling the step schema) carries that tool's arguments,
+    # not this schema's object — unwrapping it would hand the caller the wrong data.
+    called_name = parsed.get("name")
+    if called_name not in (None, _STRUCTURED_TOOL_NAME):
+        return None
+    for wrapper_key in _TOOL_CALL_ARGUMENT_KEYS:
+        if wrapper_key in declared or wrapper_key not in parsed:
+            continue
+        inner = parsed[wrapper_key]
+        if isinstance(inner, str):
+            try:
+                inner = json.loads(_strip_json_fence(inner))
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.warning("Text tool-call arguments were not valid JSON", error=str(exc))
+                continue
+        if isinstance(inner, dict):
+            logger.warning(
+                "Provider returned tool call as text; unwrapped",
+                wrapper_key=wrapper_key, tool=str(parsed.get("name", "")),
+            )
+            return inner
+    return None
+
+
+def _coerce_structured(parsed: Any, schema: Dict[str, Any]) -> Dict[str, Any]:
+    """Turn JSON parsed from a text reply into the schema's object, or fail loudly.
+
+    Used on every path where structured output arrives as text instead of a
+    tool_use block: unwraps a function call written out as text, then enforces
+    the schema's required keys exactly like the tool_use path does.
+    """
+    if not isinstance(parsed, dict):
+        raise ValueError(f"Structured output is not a JSON object: {type(parsed).__name__}")
+    unwrapped = _unwrap_text_tool_call(parsed, schema)
+    return _require_fields(unwrapped if unwrapped is not None else parsed, schema)
 
 
 def _extract_tool_input(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -817,21 +891,19 @@ def _invoke_json_uncached(
             raise
         tool_input = _extract_tool_input(result)
         if tool_input is not None:
-            # Providers do not strictly validate tool input against the schema;
-            # a missing required field must fail here, not be read as a default.
-            missing = [key for key in schema.get("required", []) if key not in tool_input]
-            if missing:
-                raise ValueError(f"Structured output missing required field(s): {', '.join(missing)}")
-            return tool_input
+            return _require_fields(tool_input, schema)
         # Model returned text despite tool_choice. This is common with local
         # OpenAI-compatible servers (Ollama, LM Studio, llama.cpp, vLLM) that
         # don't honor forced function calling. Parse the text as JSON, repairing
-        # once so the caller gets a dict rather than an uncaught JSONDecodeError.
+        # once so the caller gets a dict rather than an uncaught JSONDecodeError,
+        # then coerce it like a tool_use input (unwrap a call written as text,
+        # enforce required keys).
         logger.warning("Structured output requested but no tool_use block returned; parsing text")
-        return _parse_json_or_repair(
+        parsed = _parse_json_or_repair(
             raw=_extract_text_safe(result), system=system, user=user, model_id=model_id,
             max_tokens=max_tokens, temperature=temperature, cache_system=cache_system,
         )
+        return _coerce_structured(parsed, schema)
 
     # Legacy path: instruct JSON, parse text, repair once on failure.
     if "json" not in system.lower():

@@ -54,5 +54,5 @@ endpoints:
   # the bypass payloads.
   - path: /redirect
     method: GET
-    query: { to: "https://github.com/bkimminich/juice-shop" }
+    query: { to: "https://github.com/juice-shop/juice-shop" }
     expect: [open_redirect]
