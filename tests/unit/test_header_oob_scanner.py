@@ -114,7 +114,7 @@ async def test_probe_injects_a_distinct_marker_per_header_and_attributes_the_hit
     sent = client.requests[0]["headers"]
     assert sent["Cookie"] == "s=1"                 # original context replayed
     assert "Host" not in sent                      # routing header never replayed/injected
-    assert sent["x-dast-source"] == "scanner"
+    assert sent["x-dast-source"] == "agent"     # skipped by auto-scan / observers
     injected = [sent[name] for name, _ in load_header_specs()]
     markers = [value.split(_CORR)[0] for value in injected]
     assert len(set(markers)) == len(markers)       # one unique marker per header

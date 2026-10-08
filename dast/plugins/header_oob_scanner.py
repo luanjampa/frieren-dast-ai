@@ -155,8 +155,11 @@ class HeaderOobScannerPlugin(ProxyPlugin):
         from dast.proxy.plugin_manager import log_event
 
         headers = base_headers(entry)
-        # Tag as scanner traffic so the proxy records the probe without re-queuing it.
-        headers["x-dast-source"] = "scanner"
+        # Tag as agent traffic: "agent" is the source the store keeps authoritative
+        # and that auto-scan, session intelligence and the passive observers skip,
+        # so the probe is recorded in history without being re-scanned or analysed
+        # as genuine traffic.
+        headers["x-dast-source"] = "agent"
         injections: List[OobInjection] = []
         for name, template in specs:
             injection = self._correlator.new_injection(
